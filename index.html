@@ -346,6 +346,31 @@ window.caricaUtentiAdmin = async function() {
 };
 
 // AUTH STATE — gestisce login/logout automatico
+// ── Inizializzazione admin al primo avvio ──
+const ADMIN_UID   = 'rCC7FsynxFV6SXrUlrKAjGqIq782';
+const ADMIN_EMAIL = ''; // lasciato vuoto, viene letto da Auth
+const ADMIN_NOME  = 'Nico de Robertis';
+
+async function inizializzaAdmin() {
+  try {
+    const ref  = doc(db, 'utenti', ADMIN_UID);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        nome:     ADMIN_NOME,
+        email:    '',
+        ruolo:    'admin',
+        stato:    'approvato',
+        creatoIl: new Date().toISOString()
+      });
+      console.log('✅ Admin inizializzato');
+    }
+  } catch(e) {
+    console.log('Init admin:', e.message);
+  }
+}
+inizializzaAdmin();
+
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     // Utente loggato — carica profilo da Firestore
