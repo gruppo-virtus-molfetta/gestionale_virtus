@@ -216,16 +216,13 @@ td.note-wrap{padding:0!important}
 #page-admin-permessi .perm-table input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:#0D3B6E}
 
 </style>
-<script type="module">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
 // ════════════════════════════════════════════════
 // FIREBASE CONFIG
 // ════════════════════════════════════════════════
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
 const firebaseConfig = {
   apiKey: "AIzaSyB8xIscK-cquAndTMvSBVU9UIuf0-LBt6Q",
   authDomain: "gestionale-virtus-83045.firebaseapp.com",
@@ -235,15 +232,33 @@ const firebaseConfig = {
   appId: "1:271767137418:web:179069b93998ea084bd173"
 };
 
-const app  = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db   = getFirestore(app);
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
 
 // ════════════════════════════════════════════════
-// FUNZIONI GLOBALI ESPOSTE A window
+// ADMIN AUTO-INIT
 // ════════════════════════════════════════════════
+const ADMIN_UID  = 'rCC7FsynxFV6SXrUlrKAjGqIq782';
+const ADMIN_NOME = 'Nico de Robertis';
 
+async function inizializzaAdmin() {
+  try {
+    const ref  = db.collection('utenti').doc(ADMIN_UID);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set({
+        nome: ADMIN_NOME, email: '', ruolo: 'admin',
+        stato: 'approvato', creatoIl: new Date().toISOString()
+      });
+    }
+  } catch(e) { console.log('Init admin:', e.message); }
+}
+inizializzaAdmin();
+
+// ════════════════════════════════════════════════
 // LOGIN
+// ════════════════════════════════════════════════
 window.doLogin = async function() {
   const email = document.getElementById('login-email').value.trim();
   const pass  = document.getElementById('login-pass').value;
@@ -251,16 +266,16 @@ window.doLogin = async function() {
   err.textContent = '';
   if (!email || !pass) { err.textContent = 'Inserisci email e password.'; return; }
   try {
-    const cred = await signInWithEmailAndPassword(auth, email, pass);
-    // Ruolo e stato caricati da Firestore in onAuthStateChanged
+    await auth.signInWithEmailAndPassword(email, pass);
   } catch(e) {
-    err.textContent = e.code === 'auth/invalid-credential' || e.code === 'auth/user-not-found'
-      ? 'Credenziali non valide.'
-      : 'Errore: ' + e.message;
+    err.textContent = (e.code === 'auth/invalid-credential' || e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password')
+      ? 'Credenziali non valide.' : 'Errore: ' + e.message;
   }
 };
 
+// ════════════════════════════════════════════════
 // REGISTRAZIONE
+// ════════════════════════════════════════════════
 window.doRegistra = async function() {
   const nome  = document.getElementById('reg-nome').value.trim();
   const email = document.getElementById('reg-email').value.trim();
@@ -268,58 +283,50 @@ window.doRegistra = async function() {
   const pass2 = document.getElementById('reg-pass2').value;
   const err   = document.getElementById('reg-err');
   err.textContent = '';
-  if (!nome || !email || !pass) { err.textContent = 'Compila tutti i campi.'; return; }
+  if (!nome||!email||!pass) { err.textContent = 'Compila tutti i campi.'; return; }
   if (pass !== pass2) { err.textContent = 'Le password non coincidono.'; return; }
   if (pass.length < 6) { err.textContent = 'Password minimo 6 caratteri.'; return; }
   try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    // Salva profilo in Firestore con stato "in attesa"
-    await setDoc(doc(db, 'utenti', cred.user.uid), {
-      nome: nome,
-      email: email,
-      ruolo: 'visitor',
-      stato: 'in_attesa',
+    const cred = await auth.createUserWithEmailAndPassword(email, pass);
+    await db.collection('utenti').doc(cred.user.uid).set({
+      nome, email, ruolo: 'visitor', stato: 'in_attesa',
       creatoIl: new Date().toISOString()
     });
     document.getElementById('reg-ok').style.display = 'block';
     document.getElementById('reg-form').style.display = 'none';
   } catch(e) {
     err.textContent = e.code === 'auth/email-already-in-use'
-      ? 'Email già registrata.'
-      : 'Errore: ' + e.message;
+      ? 'Email già registrata.' : 'Errore: ' + e.message;
   }
 };
 
+// ════════════════════════════════════════════════
 // LOGOUT
+// ════════════════════════════════════════════════
 window.doLogout = async function() {
   if (!confirm('Vuoi uscire?')) return;
-  await signOut(auth);
+  await auth.signOut();
 };
 
-// APPROVA UTENTE (admin)
+// ════════════════════════════════════════════════
+// GESTIONE UTENTI (admin)
+// ════════════════════════════════════════════════
 window.approvaUtente = async function(uid, ruolo) {
-  await setDoc(doc(db, 'utenti', uid), { ruolo, stato: 'approvato' }, { merge: true });
+  await db.collection('utenti').doc(uid).set({ ruolo, stato: 'approvato' }, { merge: true });
   window.caricaUtentiAdmin();
 };
-
-// RIFIUTA / ELIMINA UTENTE (admin)
 window.eliminaUtenteFirebase = async function(uid) {
-  if (!confirm('Eliminare questo utente dal gestionale?')) return;
-  await deleteDoc(doc(db, 'utenti', uid));
+  if (!confirm('Eliminare questo utente?')) return;
+  await db.collection('utenti').doc(uid).delete();
   window.caricaUtentiAdmin();
 };
-
-// CAMBIA RUOLO UTENTE (admin)
 window.cambiaRuolo = async function(uid, nuovoRuolo) {
-  await setDoc(doc(db, 'utenti', uid), { ruolo: nuovoRuolo }, { merge: true });
+  await db.collection('utenti').doc(uid).set({ ruolo: nuovoRuolo }, { merge: true });
   window.caricaUtentiAdmin();
 };
-
-// CARICA LISTA UTENTI per pannello admin
 window.caricaUtentiAdmin = async function() {
-  const snap = await getDocs(collection(db, 'utenti'));
-  const utenti = [];
-  snap.forEach(d => utenti.push({ uid: d.id, ...d.data() }));
+  const snap = await db.collection('utenti').get();
+  const utenti = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
   const tb = document.getElementById('utenti-firebase-tbody');
   if (!tb) return;
   const ruoli = ['admin','editor','superior','visitor'];
@@ -327,7 +334,9 @@ window.caricaUtentiAdmin = async function() {
     <tr style="border-bottom:.5px solid var(--border)">
       <td style="padding:7px 10px"><b>${u.nome||''}</b><br><span style="font-size:10px;color:var(--text2)">${u.email||''}</span></td>
       <td style="padding:7px 10px;text-align:center">
-        <span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:${u.stato==='approvato'?'#C6EFCE':'#FFF2CC'};color:${u.stato==='approvato'?'#1A5C38':'#7B3F00'}">
+        <span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;
+          background:${u.stato==='approvato'?'#C6EFCE':'#FFF2CC'};
+          color:${u.stato==='approvato'?'#1A5C38':'#7B3F00'}">
           ${u.stato==='approvato'?'Approvato':'In attesa'}
         </span>
       </td>
@@ -338,73 +347,48 @@ window.caricaUtentiAdmin = async function() {
       </td>
       <td style="padding:7px 10px;text-align:center;white-space:nowrap">
         ${u.stato!=='approvato'
-          ? `<button class="btn btn-dark" style="font-size:10px;padding:3px 10px;margin-right:4px" onclick="approvaUtente('${u.uid}','${u.ruolo||'visitor'}')">✅ Approva</button>`
-          : ''}
+          ? `<button class="btn btn-dark" style="font-size:10px;padding:3px 10px;margin-right:4px"
+              onclick="approvaUtente('${u.uid}','${u.ruolo||'visitor'}')">✅ Approva</button>` : ''}
         <button class="btn-del" onclick="eliminaUtenteFirebase('${u.uid}')">✕</button>
       </td>
-    </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text2)">Nessun utente registrato</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text2)">Nessun utente</td></tr>';
 };
 
-// AUTH STATE — gestisce login/logout automatico
-// ── Inizializzazione admin al primo avvio ──
-const ADMIN_UID   = 'rCC7FsynxFV6SXrUlrKAjGqIq782';
-const ADMIN_EMAIL = ''; // lasciato vuoto, viene letto da Auth
-const ADMIN_NOME  = 'Nico de Robertis';
-
-async function inizializzaAdmin() {
-  try {
-    const ref  = doc(db, 'utenti', ADMIN_UID);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, {
-        nome:     ADMIN_NOME,
-        email:    '',
-        ruolo:    'admin',
-        stato:    'approvato',
-        creatoIl: new Date().toISOString()
-      });
-      console.log('✅ Admin inizializzato');
-    }
-  } catch(e) {
-    console.log('Init admin:', e.message);
-  }
-}
-inizializzaAdmin();
-
-onAuthStateChanged(auth, async (user) => {
+// ════════════════════════════════════════════════
+// AUTH STATE OBSERVER
+// ════════════════════════════════════════════════
+auth.onAuthStateChanged(async function(user) {
   if (user) {
-    // Utente loggato — carica profilo da Firestore
-    const snap = await getDoc(doc(db, 'utenti', user.uid));
-    if (!snap.exists()) {
-      document.getElementById('login-err').textContent = 'Profilo non trovato. Contatta l'amministratore.';
-      await signOut(auth);
-      return;
+    try {
+      const snap = await db.collection('utenti').doc(user.uid).get();
+      if (!snap.exists) {
+        document.getElementById('login-err').textContent = 'Profilo non trovato. Contatta l\'amministratore.';
+        await auth.signOut(); return;
+      }
+      const profilo = snap.data();
+      if (profilo.stato !== 'approvato') {
+        document.getElementById('login-overlay').style.display = 'flex';
+        document.getElementById('login-form-box').style.display = 'none';
+        document.getElementById('login-attesa-box').style.display = 'block';
+        await auth.signOut(); return;
+      }
+      window._currentUser = { uid: user.uid, email: user.email, ...profilo };
+      window.currentRuolo = profilo.ruolo;
+      document.getElementById('login-overlay').style.display = 'none';
+      document.getElementById('user-bar-name').textContent = profilo.nome || user.email;
+      const ruoloColors = { admin:'#0D3B6E', editor:'#1A5C38', superior:'#7B3F00', visitor:'#555' };
+      const badge = document.getElementById('ruolo-badge');
+      badge.textContent = profilo.ruolo.toUpperCase();
+      badge.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:20px;background:'+(ruoloColors[profilo.ruolo]||'#555')+';color:#fff;display:inline-block;margin-top:3px';
+      const lb = document.getElementById('logout-btn');
+      if (lb) lb.style.display = 'block';
+      window.applicaPermessi();
+      window.buildHome();
+      window.showPage('home', document.getElementById('nav-home'));
+    } catch(e) {
+      document.getElementById('login-err').textContent = 'Errore connessione: ' + e.message;
     }
-    const profilo = snap.data();
-    if (profilo.stato !== 'approvato') {
-      document.getElementById('login-overlay').style.display = 'flex';
-      document.getElementById('login-form-box').style.display = 'none';
-      document.getElementById('login-attesa-box').style.display = 'block';
-      await signOut(auth);
-      return;
-    }
-    // Accesso autorizzato
-    window._currentUser = { uid: user.uid, email: user.email, ...profilo };
-    window.currentRuolo = profilo.ruolo;
-    document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('user-bar-name').textContent = profilo.nome || user.email;
-    const ruoloColors = { admin:'#0D3B6E', editor:'#1A5C38', superior:'#7B3F00', visitor:'#555' };
-    const badge = document.getElementById('ruolo-badge');
-    badge.textContent = profilo.ruolo.toUpperCase();
-    badge.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:20px;background:' + (ruoloColors[profilo.ruolo]||'#555') + ';color:#fff;display:inline-block;margin-top:3px';
-    // Aggiungi pulsante logout
-    const lb = document.getElementById('logout-btn');
-    if (lb) lb.style.display = 'block';
-    window.applicaPermessi();
-    window.buildHome();
-    window.showPage('home', document.getElementById('nav-home'));
   } else {
-    // Utente non loggato — mostra login
     document.getElementById('login-overlay').style.display = 'flex';
     document.getElementById('login-form-box').style.display = 'block';
     document.getElementById('login-attesa-box').style.display = 'none';
@@ -412,8 +396,11 @@ onAuthStateChanged(auth, async (user) => {
     if (lb) lb.style.display = 'none';
   }
 });
-
 </script>
+
+</head>
+
+
 
 </head>
 <body>
