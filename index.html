@@ -216,6 +216,180 @@ td.note-wrap{padding:0!important}
 #page-admin-permessi .perm-table input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:#0D3B6E}
 
 </style>
+<script type="module">
+// ════════════════════════════════════════════════
+// FIREBASE CONFIG
+// ════════════════════════════════════════════════
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB8xIscK-cquAndTMvSBVU9UIuf0-LBt6Q",
+  authDomain: "gestionale-virtus-83045.firebaseapp.com",
+  projectId: "gestionale-virtus-83045",
+  storageBucket: "gestionale-virtus-83045.firebasestorage.app",
+  messagingSenderId: "271767137418",
+  appId: "1:271767137418:web:179069b93998ea084bd173"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ════════════════════════════════════════════════
+// FUNZIONI GLOBALI ESPOSTE A window
+// ════════════════════════════════════════════════
+
+// LOGIN
+window.doLogin = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const err   = document.getElementById('login-err');
+  err.textContent = '';
+  if (!email || !pass) { err.textContent = 'Inserisci email e password.'; return; }
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    // Ruolo e stato caricati da Firestore in onAuthStateChanged
+  } catch(e) {
+    err.textContent = e.code === 'auth/invalid-credential' || e.code === 'auth/user-not-found'
+      ? 'Credenziali non valide.'
+      : 'Errore: ' + e.message;
+  }
+};
+
+// REGISTRAZIONE
+window.doRegistra = async function() {
+  const nome  = document.getElementById('reg-nome').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pass  = document.getElementById('reg-pass').value;
+  const pass2 = document.getElementById('reg-pass2').value;
+  const err   = document.getElementById('reg-err');
+  err.textContent = '';
+  if (!nome || !email || !pass) { err.textContent = 'Compila tutti i campi.'; return; }
+  if (pass !== pass2) { err.textContent = 'Le password non coincidono.'; return; }
+  if (pass.length < 6) { err.textContent = 'Password minimo 6 caratteri.'; return; }
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    // Salva profilo in Firestore con stato "in attesa"
+    await setDoc(doc(db, 'utenti', cred.user.uid), {
+      nome: nome,
+      email: email,
+      ruolo: 'visitor',
+      stato: 'in_attesa',
+      creatoIl: new Date().toISOString()
+    });
+    document.getElementById('reg-ok').style.display = 'block';
+    document.getElementById('reg-form').style.display = 'none';
+  } catch(e) {
+    err.textContent = e.code === 'auth/email-already-in-use'
+      ? 'Email già registrata.'
+      : 'Errore: ' + e.message;
+  }
+};
+
+// LOGOUT
+window.doLogout = async function() {
+  if (!confirm('Vuoi uscire?')) return;
+  await signOut(auth);
+};
+
+// APPROVA UTENTE (admin)
+window.approvaUtente = async function(uid, ruolo) {
+  await setDoc(doc(db, 'utenti', uid), { ruolo, stato: 'approvato' }, { merge: true });
+  window.caricaUtentiAdmin();
+};
+
+// RIFIUTA / ELIMINA UTENTE (admin)
+window.eliminaUtenteFirebase = async function(uid) {
+  if (!confirm('Eliminare questo utente dal gestionale?')) return;
+  await deleteDoc(doc(db, 'utenti', uid));
+  window.caricaUtentiAdmin();
+};
+
+// CAMBIA RUOLO UTENTE (admin)
+window.cambiaRuolo = async function(uid, nuovoRuolo) {
+  await setDoc(doc(db, 'utenti', uid), { ruolo: nuovoRuolo }, { merge: true });
+  window.caricaUtentiAdmin();
+};
+
+// CARICA LISTA UTENTI per pannello admin
+window.caricaUtentiAdmin = async function() {
+  const snap = await getDocs(collection(db, 'utenti'));
+  const utenti = [];
+  snap.forEach(d => utenti.push({ uid: d.id, ...d.data() }));
+  const tb = document.getElementById('utenti-firebase-tbody');
+  if (!tb) return;
+  const ruoli = ['admin','editor','superior','visitor'];
+  tb.innerHTML = utenti.map(u => `
+    <tr style="border-bottom:.5px solid var(--border)">
+      <td style="padding:7px 10px"><b>${u.nome||''}</b><br><span style="font-size:10px;color:var(--text2)">${u.email||''}</span></td>
+      <td style="padding:7px 10px;text-align:center">
+        <span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:${u.stato==='approvato'?'#C6EFCE':'#FFF2CC'};color:${u.stato==='approvato'?'#1A5C38':'#7B3F00'}">
+          ${u.stato==='approvato'?'Approvato':'In attesa'}
+        </span>
+      </td>
+      <td style="padding:7px 10px;text-align:center">
+        <select class="form-input" style="font-size:11px;padding:3px 6px" onchange="cambiaRuolo('${u.uid}',this.value)">
+          ${ruoli.map(r=>`<option ${u.ruolo===r?'selected':''}>${r}</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:7px 10px;text-align:center;white-space:nowrap">
+        ${u.stato!=='approvato'
+          ? `<button class="btn btn-dark" style="font-size:10px;padding:3px 10px;margin-right:4px" onclick="approvaUtente('${u.uid}','${u.ruolo||'visitor'}')">✅ Approva</button>`
+          : ''}
+        <button class="btn-del" onclick="eliminaUtenteFirebase('${u.uid}')">✕</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text2)">Nessun utente registrato</td></tr>';
+};
+
+// AUTH STATE — gestisce login/logout automatico
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    // Utente loggato — carica profilo da Firestore
+    const snap = await getDoc(doc(db, 'utenti', user.uid));
+    if (!snap.exists()) {
+      document.getElementById('login-err').textContent = 'Profilo non trovato. Contatta l'amministratore.';
+      await signOut(auth);
+      return;
+    }
+    const profilo = snap.data();
+    if (profilo.stato !== 'approvato') {
+      document.getElementById('login-overlay').style.display = 'flex';
+      document.getElementById('login-form-box').style.display = 'none';
+      document.getElementById('login-attesa-box').style.display = 'block';
+      await signOut(auth);
+      return;
+    }
+    // Accesso autorizzato
+    window._currentUser = { uid: user.uid, email: user.email, ...profilo };
+    window.currentRuolo = profilo.ruolo;
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('user-bar-name').textContent = profilo.nome || user.email;
+    const ruoloColors = { admin:'#0D3B6E', editor:'#1A5C38', superior:'#7B3F00', visitor:'#555' };
+    const badge = document.getElementById('ruolo-badge');
+    badge.textContent = profilo.ruolo.toUpperCase();
+    badge.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:20px;background:' + (ruoloColors[profilo.ruolo]||'#555') + ';color:#fff;display:inline-block;margin-top:3px';
+    // Aggiungi pulsante logout
+    const lb = document.getElementById('logout-btn');
+    if (lb) lb.style.display = 'block';
+    window.applicaPermessi();
+    window.buildHome();
+    window.showPage('home', document.getElementById('nav-home'));
+  } else {
+    // Utente non loggato — mostra login
+    document.getElementById('login-overlay').style.display = 'flex';
+    document.getElementById('login-form-box').style.display = 'block';
+    document.getElementById('login-attesa-box').style.display = 'none';
+    const lb = document.getElementById('logout-btn');
+    if (lb) lb.style.display = 'none';
+  }
+});
+
+</script>
+
 </head>
 <body>
 <div class="app">
@@ -259,6 +433,9 @@ td.note-wrap{padding:0!important}
       <div style="font-weight:700;color:var(--text1)" id="user-bar-name"></div>
       <div id="ruolo-badge"></div>
     </div>
+    <div style="padding:.3rem 1rem 0">
+      <button id="logout-btn" onclick="doLogout()" style="display:none;width:100%;background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:6px;padding:6px;font-size:11px;cursor:pointer;font-family:inherit">🚪 Esci</button>
+    </div>
     <div style="padding:.6rem 1rem .4rem">
       <button onclick="salvaSessione()" style="width:100%;background:#1A5C38;color:#fff;border:none;border-radius:7px;padding:9px 0;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:inherit">
         💾 Salva sessione
@@ -276,10 +453,45 @@ td.note-wrap{padding:0!important}
     <div class="loghi-login" id="login-loghi"></div>
     <h2>Gruppo Virtus</h2>
     <div class="sub">Gestionale stagione 2026/2027</div>
-    <input type="text" id="login-user" placeholder="Nome utente" autocomplete="username">
-    <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-    <button onclick="doLogin()">Accedi</button>
-    <div class="err" id="login-err"></div>
+
+    <!-- Box login -->
+    <div id="login-form-box">
+      <div id="login-tabs" style="display:flex;gap:0;margin-bottom:1.2rem;border-radius:8px;overflow:hidden;border:1.5px solid #E0E0E0">
+        <button id="tab-accedi" onclick="switchTab('accedi')" style="flex:1;padding:8px;border:none;background:#0D3B6E;color:#fff;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Accedi</button>
+        <button id="tab-registra" onclick="switchTab('registra')" style="flex:1;padding:8px;border:none;background:#fff;color:#555;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Registrati</button>
+      </div>
+
+      <!-- Form accedi -->
+      <div id="form-accedi">
+        <input type="email" id="login-email" placeholder="Email" autocomplete="email">
+        <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        <button onclick="doLogin()">Accedi</button>
+      </div>
+
+      <!-- Form registrazione -->
+      <div id="form-registra" style="display:none">
+        <div id="reg-form">
+          <input type="text" id="reg-nome" placeholder="Nome e Cognome">
+          <input type="email" id="reg-email" placeholder="Email">
+          <input type="password" id="reg-pass" placeholder="Password (min. 6 caratteri)">
+          <input type="password" id="reg-pass2" placeholder="Ripeti password">
+          <button onclick="doRegistra()" style="background:#1A5C38">Invia richiesta</button>
+          <div class="err" id="reg-err"></div>
+        </div>
+        <div id="reg-ok" style="display:none;background:#C6EFCE;border-radius:8px;padding:14px;color:#1A5C38;font-size:12px;font-weight:600;margin-top:.5rem">
+          ✅ Richiesta inviata! L'amministratore riceverà notifica e ti assegnerà il ruolo. Riceverai accesso a breve.
+        </div>
+      </div>
+
+      <div class="err" id="login-err"></div>
+    </div>
+
+    <!-- Box in attesa approvazione -->
+    <div id="login-attesa-box" style="display:none;background:#FFF3CD;border-radius:10px;padding:16px;color:#7B3F00;font-size:12px;font-weight:600">
+      ⏳ La tua registrazione è in attesa di approvazione dall'amministratore. Riprova più tardi.
+      <br><br>
+      <button onclick="document.getElementById('login-attesa-box').style.display='none';document.getElementById('login-form-box').style.display='block'" style="background:#7B3F00;color:#fff;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;font-family:inherit;font-size:11px">← Torna al login</button>
+    </div>
   </div>
 </div>
 
@@ -6810,275 +7022,24 @@ function salvaSessione() {
 
 
 // ══════════════════════════════════════════════════
-// SISTEMA AUTENTICAZIONE E PERMESSI
+// AUTENTICAZIONE — gestita da Firebase (modulo ES6 sopra)
+// Le funzioni doLogin, doRegistra, doLogout, approvaUtente
+// caricaUtentiAdmin sono definite nel modulo Firebase
 // ══════════════════════════════════════════════════
 
-// Utenti — formato: { user, pass, ruolo }
-// CAMBIA QUI LE PASSWORD prima di pubblicare online
-let UTENTI = [
-  { user: 'admin',    pass: 'Admin2026!',    ruolo: 'admin' },
-  { user: 'editor',   pass: 'Editor2026!',   ruolo: 'editor' },
-  { user: 'superior', pass: 'Superior2026!', ruolo: 'superior' },
-  { user: 'visitor',  pass: 'Visitor2026!',  ruolo: 'visitor' },
-];
-
-// Permessi predefiniti (da tabella Excel compilata)
-const PERMESSI_DEFAULT = {
-  admin: {
-    'pn-view':1,'pn-edit':1,
-    'fatt-view':1,'fatt-edit':1,
-    'stip-view':1,'preg-view':1,
-    'prev-view':1,'prev-edit':1,'prev-move':1,'prev-ril-view':1,
-    'contr-view':1,'contr-edit':1,
-    'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,
-    'pdc-view':1,'pdc-edit':1,
-    'salva':1,'gestione-utenti':1,
-  },
-  editor: {
-    'pn-view':1,'pn-edit':0,
-    'fatt-view':1,'fatt-edit':1,
-    'stip-view':1,'preg-view':1,
-    'prev-view':1,'prev-edit':1,'prev-move':1,'prev-ril-view':1,
-    'contr-view':1,'contr-edit':1,
-    'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,
-    'pdc-view':1,'pdc-edit':1,
-    'salva':1,'gestione-utenti':0,
-  },
-  superior: {
-    'pn-view':0,'pn-edit':1,
-    'fatt-view':1,'fatt-edit':0,
-    'stip-view':1,'preg-view':1,
-    'prev-view':1,'prev-edit':0,'prev-move':0,'prev-ril-view':1,
-    'contr-view':1,'contr-edit':0,
-    'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,
-    'pdc-view':1,'pdc-edit':0,
-    'salva':0,'gestione-utenti':0,
-  },
-  visitor: {
-    'pn-view':0,'pn-edit':0,
-    'fatt-view':1,'fatt-edit':0,
-    'stip-view':1,'preg-view':1,
-    'prev-view':1,'prev-edit':0,'prev-move':0,'prev-ril-view':1,
-    'contr-view':1,'contr-edit':0,
-    'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,
-    'pdc-view':1,'pdc-edit':0,
-    'salva':0,'gestione-utenti':0,
-  },
-};
-
-let permessi = JSON.parse(JSON.stringify(PERMESSI_DEFAULT)); // copia profonda
-let currentUser = null;
+// Stato corrente (popolato da onAuthStateChanged)
 let currentRuolo = null;
 
-// ── Struttura tabella permessi (per il pannello admin) ──
-const PERM_ROWS = [
-  { group: 'GESTIONALE' },
-  { key: 'pn-view',   label: 'Prima Nota — visualizzazione' },
-  { key: 'pn-edit',   label: 'Prima Nota — inserimento / modifica / eliminazione' },
-  { key: 'fatt-view', label: 'Fatture Emesse — visualizzazione' },
-  { key: 'fatt-edit', label: 'Fatture Emesse — inserimento / modifica / eliminazione' },
-  { key: 'stip-view', label: 'Stipendi — visualizzazione' },
-  { key: 'preg-view', label: 'Debiti Pregressi — visualizzazione' },
-  { group: 'PREVENTIVO' },
-  { key: 'prev-view',    label: 'Preventivo — visualizzazione' },
-  { key: 'prev-edit',    label: 'Preventivo — aggiunta / modifica / eliminazione voci' },
-  { key: 'prev-move',    label: 'Preventivo — sposta / duplica voci' },
-  { key: 'prev-ril-view',label: 'Riepilogo Gruppo — visualizzazione' },
-  { group: 'CONTRATTI & ANALISI' },
-  { key: 'contr-view', label: 'Contratti — visualizzazione' },
-  { key: 'contr-edit', label: 'Contratti — inserimento / modifica / eliminazione' },
-  { key: 'dashboard',  label: 'Dashboard' },
-  { key: 'fabbisogno', label: 'Fabbisogno Mensile' },
-  { key: 'scadenzario',label: 'Scadenzario' },
-  { key: 'rendiconto', label: 'Rendiconto' },
-  { group: 'IMPOSTAZIONI' },
-  { key: 'pdc-view', label: 'Piano dei Conti — visualizzazione' },
-  { key: 'pdc-edit', label: 'Piano dei Conti — modifica' },
-  { group: 'SISTEMA' },
-  { key: 'salva',           label: '💾 Salva sessione' },
-  { key: 'gestione-utenti', label: 'Gestione utenti (aggiunta / modifica / eliminazione)' },
-];
-
-// ── LOGIN ──
-function doLogin() {
-  const u = document.getElementById('login-user').value.trim();
-  const p = document.getElementById('login-pass').value;
-  const found = UTENTI.find(x => x.user === u && x.pass === p);
-  if (!found) {
-    document.getElementById('login-err').textContent = 'Credenziali non valide. Riprova.';
-    document.getElementById('login-pass').value = '';
-    return;
-  }
-  currentUser = found.user;
-  currentRuolo = found.ruolo;
-  document.getElementById('login-overlay').style.display = 'none';
-  document.getElementById('user-bar-name').textContent = found.user;
-  const ruoloColors = { admin:'#0D3B6E', editor:'#1A5C38', superior:'#7B3F00', visitor:'#555' };
-  const badge = document.getElementById('ruolo-badge');
-  badge.textContent = found.ruolo.toUpperCase();
-  badge.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:20px;background:' + (ruoloColors[found.ruolo]||'#555') + ';color:#fff;display:inline-block;margin-top:3px';
-  applicaPermessi();
-  buildHome();
+// Tab switch nel login
+function switchTab(tab) {
+  document.getElementById('form-accedi').style.display   = tab==='accedi'   ? 'block' : 'none';
+  document.getElementById('form-registra').style.display = tab==='registra' ? 'block' : 'none';
+  document.getElementById('tab-accedi').style.background    = tab==='accedi'   ? '#0D3B6E' : '#fff';
+  document.getElementById('tab-accedi').style.color         = tab==='accedi'   ? '#fff'    : '#555';
+  document.getElementById('tab-registra').style.background  = tab==='registra' ? '#0D3B6E' : '#fff';
+  document.getElementById('tab-registra').style.color       = tab==='registra' ? '#fff'    : '#555';
+  document.getElementById('login-err').textContent = '';
 }
-
-// ── APPLICA PERMESSI all'interfaccia ──
-function applicaPermessi() {
-  const P = permessi[currentRuolo] || {};
-
-  // Mappa: pageId o elemento → chiave permesso
-  // Sidebar — mostra/nascondi voci
-  const navMap = {
-    'primanota':      P['pn-view'] || P['pn-edit'],
-    'fatture':        P['fatt-view'] || P['fatt-edit'],
-    'stipendi':       P['stip-view'],
-    'pregresso':      P['preg-view'],
-    'prev-virtus':    P['prev-view'],
-    'prev-dinamo':    P['prev-view'],
-    'prev-invicta':   P['prev-view'],
-    'prev-riepilogo': P['prev-ril-view'],
-    'contratti':      P['contr-view'] || P['contr-edit'],
-    'dashboard':      P['dashboard'],
-    'fabbisogno':     P['fabbisogno'],
-    'scadenzario':    P['scadenzario'],
-    'rendiconto':     P['rendiconto'],
-    'piano-conti':    P['pdc-view'],
-    'admin-permessi': currentRuolo === 'admin',
-  };
-
-  // Applica visibilità nav
-  document.querySelectorAll('.nav-item').forEach(btn => {
-    const oc = btn.getAttribute('onclick') || '';
-    const m = oc.match(/showPage\('([^']+)'/);
-    if (!m) return;
-    const pid = m[1];
-    if (pid === 'home') return; // sempre visibile
-    const vis = navMap[pid];
-    btn.style.display = (vis === undefined || vis) ? '' : 'none';
-  });
-
-  // Salva sessione
-  const saveBtn = document.querySelector('[onclick="salvaSessione()"]');
-  if (saveBtn) saveBtn.style.display = P['salva'] ? '' : 'none';
-  const saveNote = saveBtn ? saveBtn.nextElementSibling : null;
-  if (saveNote) saveNote.style.display = P['salva'] ? '' : 'none';
-
-  // Pulsanti inserimento Prima Nota
-  setCtrl('[onclick="openModalPN()"]', P['pn-edit']);
-  // Pulsanti + Aggiungi voce preventivo
-  document.querySelectorAll('[onclick^="openModalPrev"]').forEach(b => setCtrl(b, P['prev-edit']));
-  // Sposta/Duplica preventivo
-  document.querySelectorAll('[onclick^="openSpostaModal"],[onclick^="dupVocePrev"]').forEach(b => setCtrl(b, P['prev-move']));
-  // Elimina preventivo
-  document.querySelectorAll('[onclick^="delVocePrev"]').forEach(b => setCtrl(b, P['prev-edit']));
-  // Pulsanti fatture
-  setCtrl('[onclick="openModalFatt()"]', P['fatt-edit']);
-  // Pulsanti contratti
-  setCtrl('[onclick^="openModalContr"]', P['contr-edit']);
-  // Pulsanti Piano dei Conti edit
-  document.querySelectorAll('.pdc-edit-ctrl').forEach(b => setCtrl(b, P['pdc-edit']));
-}
-
-function setCtrl(selector, allowed) {
-  const els = typeof selector === 'string'
-    ? document.querySelectorAll(selector)
-    : [selector];
-  els.forEach(el => {
-    if (!el) return;
-    el.style.display = allowed ? '' : 'none';
-  });
-}
-
-// ── PANNELLO ADMIN PERMESSI ──
-function buildAdminPermessi() {
-  const tbody = document.getElementById('perm-tbody');
-  if (!tbody) return;
-  const ruoli = ['admin','editor','superior','visitor'];
-  tbody.innerHTML = PERM_ROWS.map(r => {
-    if (r.group) return `<tr class="perm-group"><td colspan="5">${r.group}</td></tr>`;
-    return `<tr>
-      <td>${r.label}</td>
-      ${ruoli.map(rol => `
-        <td style="text-align:center">
-          <input type="checkbox" data-ruolo="${rol}" data-key="${r.key}"
-            ${permessi[rol][r.key] ? 'checked' : ''}
-            ${rol === 'admin' && r.key === 'gestione-utenti' ? 'disabled title="Admin ha sempre questo permesso"' : ''}
-            onchange="aggiornaPerm(this)">
-        </td>`).join('')}
-    </tr>`;
-  }).join('');
-}
-
-function aggiornaPerm(cb) {
-  const ruolo = cb.dataset.ruolo;
-  const key   = cb.dataset.key;
-  permessi[ruolo][key] = cb.checked ? 1 : 0;
-}
-
-function salvaPermessi() {
-  // I permessi sono già aggiornati in tempo reale da aggiornaPerm()
-  // Riapplica all'interfaccia corrente
-  applicaPermessi();
-  alert('✅ Permessi salvati. Verranno inclusi nel prossimo 💾 Salva sessione.');
-}
-
-function ripristinaPermessi() {
-  if (!confirm('Ripristinare i permessi predefiniti? Le modifiche correnti andranno perse.')) return;
-  permessi = JSON.parse(JSON.stringify(PERMESSI_DEFAULT));
-  buildAdminPermessi();
-  applicaPermessi();
-}
-
-// ── PAGINA GESTIONE UTENTI (solo admin) ──
-// Integrata nella stessa pagina admin-permessi come sezione aggiuntiva
-function buildGestioneUtenti() {
-  // aggiunta dinamica se non esiste
-  let el = document.getElementById('gestione-utenti-section');
-  if (!el) return;
-  el.innerHTML = `
-    <div style="margin-top:1.5rem">
-      <div class="page-sub" style="font-size:13px;font-weight:700;color:var(--text1);margin-bottom:.8rem">👤 Gestione Utenti</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:#1F3864;color:#fff">
-          <th style="padding:8px 10px;text-align:left">Utente</th>
-          <th style="padding:8px 10px;text-align:left">Password</th>
-          <th style="padding:8px 10px;text-align:left">Ruolo</th>
-          <th style="padding:8px 10px;text-align:center">Azioni</th>
-        </tr></thead>
-        <tbody id="utenti-tbody"></tbody>
-      </table>
-      <button class="btn btn-dark" style="margin-top:.8rem" onclick="aggiungiUtente()">+ Aggiungi utente</button>
-    </div>`;
-  aggiornaUtenti();
-}
-
-function aggiornaUtenti() {
-  const tb = document.getElementById('utenti-tbody');
-  if (!tb) return;
-  tb.innerHTML = UTENTI.map((u,i) => `<tr style="border-bottom:.5px solid var(--border)">
-    <td style="padding:7px 10px"><input class="form-input" value="${u.user}" onchange="UTENTI[${i}].user=this.value" style="width:100%;font-size:11px"></td>
-    <td style="padding:7px 10px"><input class="form-input" value="${u.pass}" onchange="UTENTI[${i}].pass=this.value" style="width:100%;font-size:11px"></td>
-    <td style="padding:7px 10px">
-      <select class="form-input" onchange="UTENTI[${i}].ruolo=this.value" style="font-size:11px">
-        ${['admin','editor','superior','visitor'].map(r=>`<option ${u.ruolo===r?'selected':''}>${r}</option>`).join('')}
-      </select>
-    </td>
-    <td style="text-align:center;padding:4px">
-      ${i>0?`<button class="btn-del" onclick="eliminaUtente(${i})">✕</button>`:'<span style="color:var(--text3);font-size:10px">admin fisso</span>'}
-    </td>
-  </tr>`).join('');
-}
-
-function aggiungiUtente() {
-  UTENTI.push({user:'nuovo', pass:'Password1!', ruolo:'visitor'});
-  aggiornaUtenti();
-}
-
-function eliminaUtente(i) {
-  if (!confirm('Eliminare questo utente?')) return;
-  UTENTI.splice(i,1);
-  aggiornaUtenti();
-}
-
 
 function navTo(id) {
   // Trova il nav-item corrispondente e attivalo
@@ -7143,8 +7104,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Inizializza loghi nel box di login
   const ll = document.getElementById('login-loghi');
   if(ll) ll.innerHTML = SOC.map(s=>`<img src="${LOGO[s]}" title="${s}">`).join('');
-  // Non mostrare la home finché non si fa login
-  // showPage viene chiamato da doLogin()
+  // buildHome e showPage chiamati da Firebase onAuthStateChanged dopo login
 });
 </script>
 
