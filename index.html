@@ -3096,6 +3096,123 @@ let collapsedPrev = {};
 let contratti = [];
 let cNextId = 0;
 
+// ── Permessi ──
+const PERMESSI_DEFAULT = {
+  admin:    { 'pn-view':1,'pn-edit':1,'fatt-view':1,'fatt-edit':1,'stip-view':1,'preg-view':1,'prev-view':1,'prev-edit':1,'prev-move':1,'prev-ril-view':1,'contr-view':1,'contr-edit':1,'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,'pdc-view':1,'pdc-edit':1,'salva':1,'gestione-utenti':1 },
+  editor:   { 'pn-view':1,'pn-edit':0,'fatt-view':1,'fatt-edit':1,'stip-view':1,'preg-view':1,'prev-view':1,'prev-edit':1,'prev-move':1,'prev-ril-view':1,'contr-view':1,'contr-edit':1,'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,'pdc-view':1,'pdc-edit':1,'salva':1,'gestione-utenti':0 },
+  superior: { 'pn-view':0,'pn-edit':1,'fatt-view':1,'fatt-edit':0,'stip-view':1,'preg-view':1,'prev-view':1,'prev-edit':0,'prev-move':0,'prev-ril-view':1,'contr-view':1,'contr-edit':0,'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,'pdc-view':1,'pdc-edit':0,'salva':0,'gestione-utenti':0 },
+  visitor:  { 'pn-view':0,'pn-edit':0,'fatt-view':1,'fatt-edit':0,'stip-view':1,'preg-view':1,'prev-view':1,'prev-edit':0,'prev-move':0,'prev-ril-view':1,'contr-view':1,'contr-edit':0,'dashboard':1,'fabbisogno':1,'scadenzario':1,'rendiconto':1,'pdc-view':1,'pdc-edit':0,'salva':0,'gestione-utenti':0 },
+};
+let permessi = JSON.parse(JSON.stringify(PERMESSI_DEFAULT));
+
+const PERM_ROWS = [
+  { group:'GESTIONALE' },
+  { key:'pn-view',        label:'Prima Nota — visualizzazione' },
+  { key:'pn-edit',        label:'Prima Nota — inserimento / modifica / eliminazione' },
+  { key:'fatt-view',      label:'Fatture Emesse — visualizzazione' },
+  { key:'fatt-edit',      label:'Fatture Emesse — inserimento / modifica / eliminazione' },
+  { key:'stip-view',      label:'Stipendi — visualizzazione' },
+  { key:'preg-view',      label:'Debiti Pregressi — visualizzazione' },
+  { group:'PREVENTIVO' },
+  { key:'prev-view',      label:'Preventivo — visualizzazione' },
+  { key:'prev-edit',      label:'Preventivo — aggiunta / modifica / eliminazione voci' },
+  { key:'prev-move',      label:'Preventivo — sposta / duplica voci' },
+  { key:'prev-ril-view',  label:'Riepilogo Gruppo — visualizzazione' },
+  { group:'CONTRATTI & ANALISI' },
+  { key:'contr-view',     label:'Contratti — visualizzazione' },
+  { key:'contr-edit',     label:'Contratti — inserimento / modifica / eliminazione' },
+  { key:'dashboard',      label:'Dashboard' },
+  { key:'fabbisogno',     label:'Fabbisogno Mensile' },
+  { key:'scadenzario',    label:'Scadenzario' },
+  { key:'rendiconto',     label:'Rendiconto' },
+  { group:'IMPOSTAZIONI' },
+  { key:'pdc-view',       label:'Piano dei Conti — visualizzazione' },
+  { key:'pdc-edit',       label:'Piano dei Conti — modifica' },
+  { group:'SISTEMA' },
+  { key:'salva',          label:'☁️ Sync cloud' },
+  { key:'gestione-utenti',label:'Gestione utenti' },
+];
+
+function applicaPermessi() {
+  const P = permessi[window.currentRuolo] || permessi['visitor'];
+  const navMap = {
+    'primanota':      P['pn-view']||P['pn-edit'],
+    'fatture':        P['fatt-view']||P['fatt-edit'],
+    'stipendi':       P['stip-view'],
+    'pregresso':      P['preg-view'],
+    'prev-virtus':    P['prev-view'],
+    'prev-dinamo':    P['prev-view'],
+    'prev-invicta':   P['prev-view'],
+    'prev-riepilogo': P['prev-ril-view'],
+    'contratti':      P['contr-view']||P['contr-edit'],
+    'dashboard':      P['dashboard'],
+    'fabbisogno':     P['fabbisogno'],
+    'scadenzario':    P['scadenzario'],
+    'rendiconto':     P['rendiconto'],
+    'piano-conti':    P['pdc-view'],
+    'admin-permessi': window.currentRuolo === 'admin',
+  };
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    const oc = btn.getAttribute('onclick') || '';
+    const m = oc.match(/showPage\('([^']+)'/);
+    if (!m) return;
+    const pid = m[1];
+    if (pid === 'home') return;
+    const vis = navMap[pid];
+    btn.style.display = (vis === undefined || vis) ? '' : 'none';
+  });
+  const saveBtn = document.querySelector('[onclick="salvaSessione()"]');
+  if (saveBtn) saveBtn.style.display = P['salva'] ? '' : 'none';
+  function setCtrl(selector, allowed) {
+    const els = typeof selector === 'string' ? document.querySelectorAll(selector) : [selector];
+    els.forEach(el => { if (el) el.style.display = allowed ? '' : 'none'; });
+  }
+  setCtrl('[onclick="openModalPN()"]',     P['pn-edit']);
+  setCtrl('[onclick="openModalFatt()"]',   P['fatt-edit']);
+  document.querySelectorAll('[onclick^="openModalPrev"]').forEach(b => b.style.display = P['prev-edit'] ? '' : 'none');
+  document.querySelectorAll('[onclick^="openSpostaModal"],[onclick^="dupVocePrev"]').forEach(b => b.style.display = P['prev-move'] ? '' : 'none');
+  document.querySelectorAll('[onclick^="delVocePrev"]').forEach(b => b.style.display = P['prev-edit'] ? '' : 'none');
+  setCtrl('[onclick^="openModalContr"]',   P['contr-edit']);
+  document.querySelectorAll('.pdc-edit-ctrl').forEach(b => b.style.display = P['pdc-edit'] ? '' : 'none');
+}
+
+function buildAdminPermessi() {
+  const tbody = document.getElementById('perm-tbody');
+  if (!tbody) return;
+  const ruoli = ['admin','editor','superior','visitor'];
+  tbody.innerHTML = PERM_ROWS.map(r => {
+    if (r.group) return `<tr class="perm-group"><td colspan="5">${r.group}</td></tr>`;
+    return `<tr><td>${r.label}</td>${ruoli.map(rol => `<td style="text-align:center"><input type="checkbox" data-ruolo="${rol}" data-key="${r.key}" ${permessi[rol][r.key]?'checked':''} ${rol==='admin'&&r.key==='gestione-utenti'?'disabled':''} onchange="aggiornaPerm(this)"></td>`).join('')}</tr>`;
+  }).join('');
+}
+
+function aggiornaPerm(cb) {
+  permessi[cb.dataset.ruolo][cb.dataset.key] = cb.checked ? 1 : 0;
+}
+
+function salvaPermessi() {
+  applicaPermessi();
+  window.salvaEAggiorna();
+  alert('✅ Permessi salvati.');
+}
+
+function ripristinaPermessi() {
+  if (!confirm('Ripristinare i permessi predefiniti?')) return;
+  permessi = JSON.parse(JSON.stringify(PERMESSI_DEFAULT));
+  buildAdminPermessi();
+  applicaPermessi();
+}
+
+function switchTab(tab) {
+  document.getElementById('form-accedi').style.display   = tab==='accedi'   ? 'block' : 'none';
+  document.getElementById('form-registra').style.display = tab==='registra' ? 'block' : 'none';
+  document.getElementById('tab-accedi').style.background    = tab==='accedi'   ? '#0D3B6E' : '#fff';
+  document.getElementById('tab-accedi').style.color         = tab==='accedi'   ? '#fff'    : '#555';
+  document.getElementById('tab-registra').style.background  = tab==='registra' ? '#0D3B6E' : '#fff';
+  document.getElementById('tab-registra').style.color       = tab==='registra' ? '#fff'    : '#555';
+  document.getElementById('login-err').textContent = '';
+}
+
 // ══════════════════════════════════════════════════
 // NAVIGAZIONE
 // ══════════════════════════════════════════════════
@@ -5029,21 +5146,6 @@ function scadClick(soc, gruppo, conto, subconto, meseIdx) {
 // ══════════════════════════════════════════════════
 function salvaSessione() {
   window.salvaEAggiorna().then(() => alert('✅ Dati sincronizzati su cloud con successo!'));
-  return; // ── il codice sotto è mantenuto solo come backup ──
-  const dati = { pnData, stipData, pregData, fattureData, contratti, prevState, pdcData, permessi, UTENTI };
-  const json = JSON.stringify(dati);
-  const script = '<scr'+'ipt id="__sessione_dati__">(function(){try{window.__sessioneDati__='+json+';}catch(e){}})();<\/scr'+'ipt>';
-  var html = document.documentElement.outerHTML;
-  html = html.replace(/<script id="__sessione_dati__">[\s\S]*?<\/script>/, '');
-  html = html.replace(/(<body[^>]*>)/, '$1' + script);
-  var blob = new Blob([html], {type:'text/html;charset=utf-8'});
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  var now = new Date();
-  var ts = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+'_'+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0');
-  a.download = 'gruppo_virtus_'+ts+'.html';
-  a.click();
-  URL.revokeObjectURL(a.href);
 }
 
 (function(){
@@ -5070,22 +5172,11 @@ function salvaSessione() {
 // Stato corrente (popolato da onAuthStateChanged)
 let currentRuolo = null;
 
-// Tab switch nel login
-function switchTab(tab) {
-  document.getElementById('form-accedi').style.display   = tab==='accedi'   ? 'block' : 'none';
-  document.getElementById('form-registra').style.display = tab==='registra' ? 'block' : 'none';
-  document.getElementById('tab-accedi').style.background    = tab==='accedi'   ? '#0D3B6E' : '#fff';
-  document.getElementById('tab-accedi').style.color         = tab==='accedi'   ? '#fff'    : '#555';
-  document.getElementById('tab-registra').style.background  = tab==='registra' ? '#0D3B6E' : '#fff';
-  document.getElementById('tab-registra').style.color       = tab==='registra' ? '#fff'    : '#555';
-  document.getElementById('login-err').textContent = '';
-}
-
 function navTo(id) {
   const btn = Array.from(document.querySelectorAll('.nav-item'))
     .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + id + "'"));
   showPage(id, btn || null);
-  closeSidebar(); // chiude sidebar su mobile dopo navigazione
+  closeSidebar();
 }
 
 function toggleSidebar() {
