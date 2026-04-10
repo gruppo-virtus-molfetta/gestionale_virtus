@@ -468,29 +468,10 @@ window.caricaDatiFirestore = async function() {
       if (d.pdcData)    pdcData    = d.pdcData;
       if (d.permessi)   permessi   = d.permessi;
       console.log('✅ Dati caricati da Firestore');
-      // Rebuild immediato di tutte le sezioni
-      if(typeof renderPN === 'function') renderPN();
-      if(typeof renderFatture === 'function') renderFatture();
-      if(typeof renderStipendi === 'function') renderStipendi();
-      if(typeof renderPregresso === 'function') renderPregresso();
-      if(typeof SOC !== 'undefined') SOC.forEach(s => { if(typeof buildPrev === 'function') buildPrev(s); });
-      if(typeof buildRiepilogoPrev === 'function') buildRiepilogoPrev();
-      if(typeof buildDashboard === 'function') buildDashboard();
-      if(typeof buildContratti === 'function') buildContratti();
-      if(typeof buildScadenzario === 'function') buildScadenzario();
-      if(typeof buildRendiconto === 'function') buildRendiconto();
-      if(typeof buildFabbisogno === 'function') buildFabbisogno();
-      if(typeof pdcRender === 'function') pdcRender();
     } else {
       // Prima volta — salva i dati iniziali su Firestore
       await salvaDatiFirestore();
       console.log('✅ Dati iniziali salvati su Firestore');
-      // Rebuild sezioni con dati iniziali
-      if(typeof renderPN === 'function') renderPN();
-      if(typeof renderFatture === 'function') renderFatture();
-      if(typeof SOC !== 'undefined') SOC.forEach(s => { if(typeof buildPrev === 'function') buildPrev(s); });
-      if(typeof buildRiepilogoPrev === 'function') buildRiepilogoPrev();
-      if(typeof buildDashboard === 'function') buildDashboard();
     }
   } catch(e) {
     console.error('Errore caricamento dati:', e.message);
@@ -647,6 +628,19 @@ auth.onAuthStateChanged(async function(user) {
       // Carica dati da Firestore e avvia sincronizzazione in tempo reale
       await window.caricaDatiFirestore();
       window.avviaListenerDati();
+      // Rebuild completo di tutte le sezioni con i dati Firestore
+      renderPN();
+      renderFatture();
+      renderStipendi();
+      renderPregresso();
+      SOC.forEach(s => buildPrev(s));
+      buildRiepilogoPrev();
+      buildDashboard();
+      buildContratti();
+      buildRendiconto();
+      buildFabbisogno();
+      buildScadenzario();
+      pdcRender();
       window.buildHome();
       window.showPage('home', document.getElementById('nav-home'));
     } catch(e) {
