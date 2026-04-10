@@ -499,8 +499,10 @@ window.salvaDatiFirestore = async function() {
 
 // Listener in tempo reale — aggiorna UI quando i dati cambiano
 window.avviaListenerDati = function() {
+  let primoSnapshot = true; // salta il primo snapshot (già caricato da caricaDatiFirestore)
   DATI_REF().onSnapshot(snap => {
     if (!snap.exists) return;
+    if (primoSnapshot) { primoSnapshot = false; return; } // primo snapshot ignorato
     const d = snap.data();
     const vecchiPN    = JSON.stringify(pnData);
     const vecchiFatt  = JSON.stringify(fattureData);
