@@ -428,6 +428,7 @@ window.doRegistra = async function() {
 // ════════════════════════════════════════════════
 window.doLogout = async function() {
   if (!confirm('Vuoi uscire?')) return;
+  if (_listenerUnsubscribe) { _listenerUnsubscribe(); _listenerUnsubscribe = null; }
   await auth.signOut();
 };
 
@@ -500,7 +501,7 @@ window.salvaDatiFirestore = async function() {
 // Listener in tempo reale — aggiorna UI quando i dati cambiano
 window.avviaListenerDati = function() {
   let primoSnapshot = true; // salta il primo snapshot (già caricato da caricaDatiFirestore)
-  DATI_REF().onSnapshot(snap => {
+  const unsubscribe = DATI_REF().onSnapshot(snap => {
     if (!snap.exists) return;
     if (primoSnapshot) { primoSnapshot = false; return; } // primo snapshot ignorato
     const d = snap.data();
@@ -543,6 +544,7 @@ window.avviaListenerDati = function() {
   }, err => {
     console.error('Listener errore:', err.message);
   });
+  return unsubscribe; // permette di fermare il listener al logout
 };
 
 // Indicatore di salvataggio
@@ -601,6 +603,8 @@ window.caricaUtentiAdmin = async function() {
 // ════════════════════════════════════════════════
 // AUTH STATE OBSERVER
 // ════════════════════════════════════════════════
+let _listenerUnsubscribe = null; // riferimento al listener attivo
+
 auth.onAuthStateChanged(async function(user) {
   if (user) {
     try {
@@ -627,9 +631,12 @@ auth.onAuthStateChanged(async function(user) {
       const lb = document.getElementById('logout-btn');
       if (lb) lb.style.display = 'block';
       window.applicaPermessi();
-      // Carica dati da Firestore e avvia sincronizzazione in tempo reale
+      // Carica dati da Firestore
       await window.caricaDatiFirestore();
-      window.avviaListenerDati();
+      // Avvia listener solo se non già attivo
+      if (!_listenerUnsubscribe) {
+        _listenerUnsubscribe = window.avviaListenerDati();
+      }
       // Rebuild completo di tutte le sezioni con i dati Firestore
       renderPN();
       renderFatture();
