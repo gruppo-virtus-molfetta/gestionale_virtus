@@ -625,6 +625,9 @@ auth.onAuthStateChanged(async function(user) {
       const lb = document.getElementById('logout-btn');
       if (lb) lb.style.display = 'block';
       window.applicaPermessi();
+      // Carica dati da Firestore e avvia sincronizzazione in tempo reale
+      await window.caricaDatiFirestore();
+      window.avviaListenerDati();
       window.buildHome();
       window.showPage('home', document.getElementById('nav-home'));
     } catch(e) {
@@ -5316,6 +5319,7 @@ SOC.forEach((s,si) => {
     note:''
   }));
 });
+// ⚠️ prevState viene sovrascritto da Firestore dopo il login — non modificare qui
 let collapsedPrev = {};
 
 // ── Contratti ──
