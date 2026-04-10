@@ -708,6 +708,13 @@ auth.onAuthStateChanged(async function(user) {
         ☁️ Sync cloud
       </button>
       <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px;line-height:1.4">Dati salvati automaticamente</div>
+      <div style="display:flex;gap:4px;margin-top:6px">
+        <button onclick="esportaBackup()" style="flex:1;background:#185FA5;color:#fff;border:none;border-radius:6px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">📥 Backup JSON</button>
+        <label style="flex:1;background:#7B3F00;color:#fff;border:none;border-radius:6px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;text-align:center;display:flex;align-items:center;justify-content:center">
+          📤 Ripristina
+          <input type="file" accept=".json" onchange="importaBackup(event)" style="display:none">
+        </label>
+      </div>
     </div>
   </div>
 </div>
@@ -5143,6 +5150,58 @@ function scadClick(soc, gruppo, conto, subconto, meseIdx) {
 // ══════════════════════════════════════════════════
 function salvaSessione() {
   window.salvaEAggiorna().then(() => alert('✅ Dati sincronizzati su cloud con successo!'));
+}
+
+// ── Esporta backup JSON ──
+function esportaBackup() {
+  const backup = {
+    versione: '1.0',
+    data: new Date().toISOString(),
+    pnData, fattureData, fattNr, contratti, prevState, pdcData, permessi
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const ts = new Date().toISOString().slice(0,10);
+  a.download = `backup_gestionale_virtus_${ts}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Importa backup JSON ──
+function importaBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!confirm(`Ripristinare i dati da "${file.name}"?\n\nATTENZIONE: i dati attuali su cloud verranno sovrascritti.`)) {
+    event.target.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const backup = JSON.parse(e.target.result);
+      if (backup.pnData)      pnData      = backup.pnData;
+      if (backup.fattureData) fattureData = backup.fattureData;
+      if (backup.fattNr)      fattNr      = backup.fattNr;
+      if (backup.contratti)   contratti   = backup.contratti;
+      if (backup.prevState)   prevState   = backup.prevState;
+      if (backup.pdcData)     pdcData     = backup.pdcData;
+      if (backup.permessi)    permessi    = backup.permessi;
+      // Salva su Firestore
+      await window.salvaDatiFirestore();
+      // Ricostruisce tutto
+      renderPN(); renderFatture(); renderStipendi(); renderPregresso();
+      SOC.forEach(s => buildPrev(s));
+      buildRiepilogoPrev(); buildDashboard(); buildContratti();
+      buildRendiconto(); buildFabbisogno(); buildScadenzario(); pdcRender();
+      buildHome();
+      alert(`✅ Backup ripristinato con successo!\nData backup: ${backup.data || 'N/D'}`);
+    } catch(err) {
+      alert('❌ Errore nel ripristino: ' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 (function(){
