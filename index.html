@@ -447,6 +447,125 @@ window.cambiaRuolo = async function(uid, nuovoRuolo) {
   await db.collection('utenti').doc(uid).set({ ruolo: nuovoRuolo }, { merge: true });
   window.caricaUtentiAdmin();
 };
+
+// ════════════════════════════════════════════════
+// GESTIONE DATI SU FIRESTORE
+// ════════════════════════════════════════════════
+
+const DATI_REF = () => db.collection('gestionale').doc('dati');
+
+// Carica tutti i dati da Firestore all'avvio
+window.caricaDatiFirestore = async function() {
+  try {
+    const snap = await DATI_REF().get();
+    if (snap.exists) {
+      const d = snap.data();
+      if (d.pnData)     pnData     = d.pnData;
+      if (d.fattureData)fattureData= d.fattureData;
+      if (d.fattNr)     fattNr     = d.fattNr;
+      if (d.contratti)  contratti  = d.contratti;
+      if (d.prevState)  prevState  = d.prevState;
+      if (d.pdcData)    pdcData    = d.pdcData;
+      if (d.permessi)   permessi   = d.permessi;
+      console.log('✅ Dati caricati da Firestore');
+    } else {
+      // Prima volta — salva i dati iniziali
+      await salvaDatiFirestore();
+      console.log('✅ Dati iniziali salvati su Firestore');
+    }
+  } catch(e) {
+    console.error('Errore caricamento dati:', e.message);
+  }
+};
+
+// Salva tutti i dati su Firestore
+window.salvaDatiFirestore = async function() {
+  try {
+    await DATI_REF().set({
+      pnData,
+      fattureData,
+      fattNr,
+      contratti,
+      prevState,
+      pdcData,
+      permessi,
+      aggiornatoIl: new Date().toISOString(),
+      aggiornatoDa: window._currentUser ? window._currentUser.nome : 'sistema'
+    });
+  } catch(e) {
+    console.error('Errore salvataggio:', e.message);
+  }
+};
+
+// Listener in tempo reale — aggiorna UI quando i dati cambiano
+window.avviaListenerDati = function() {
+  DATI_REF().onSnapshot(snap => {
+    if (!snap.exists) return;
+    const d = snap.data();
+    const vecchiPN    = JSON.stringify(pnData);
+    const vecchiFatt  = JSON.stringify(fattureData);
+    const vecchiContr = JSON.stringify(contratti);
+    const vecchiPrev  = JSON.stringify(prevState);
+    const vecchiPdc   = JSON.stringify(pdcData);
+    const vecchiPerm  = JSON.stringify(permessi);
+
+    if (d.pnData)      pnData      = d.pnData;
+    if (d.fattureData) fattureData = d.fattureData;
+    if (d.fattNr)      fattNr      = d.fattNr;
+    if (d.contratti)   contratti   = d.contratti;
+    if (d.prevState)   prevState   = d.prevState;
+    if (d.pdcData)     pdcData     = d.pdcData;
+    if (d.permessi)    permessi    = d.permessi;
+
+    // Aggiorna solo le sezioni che sono cambiate
+    if (d.pnData      && JSON.stringify(d.pnData)      !== vecchiPN)    renderPN();
+    if (d.fattureData && JSON.stringify(d.fattureData) !== vecchiFatt)  renderFatture();
+    if (d.contratti   && JSON.stringify(d.contratti)   !== vecchiContr) buildContratti();
+    if (d.prevState   && JSON.stringify(d.prevState)   !== vecchiPrev) {
+      SOC.forEach(s => buildPrev(s));
+      buildRiepilogoPrev();
+      renderStipendi();
+      renderPregresso();
+    }
+    if (d.pdcData     && JSON.stringify(d.pdcData)     !== vecchiPdc)  {
+      if(document.getElementById('page-piano-conti').classList.contains('active')) pdcRender();
+    }
+    if (d.permessi    && JSON.stringify(d.permessi)    !== vecchiPerm)  applicaPermessi();
+
+    // Aggiorna sempre dashboard e home
+    buildDashboard();
+    buildHome();
+    buildScadenzario();
+    buildRendiconto();
+    buildFabbisogno();
+  }, err => {
+    console.error('Listener errore:', err.message);
+  });
+};
+
+// Indicatore di salvataggio
+function mostraSalvataggio() {
+  let el = document.getElementById('sync-indicator');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-indicator';
+    el.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1A5C38;color:#fff;' +
+      'font-size:11px;font-weight:700;padding:6px 14px;border-radius:20px;z-index:9000;' +
+      'transition:opacity .4s;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    document.body.appendChild(el);
+  }
+  el.textContent = '✅ Salvato su cloud';
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+
+// Wrapper: salva e mostra indicatore
+window.salvaEAggiorna = async function() {
+  await salvaDatiFirestore();
+  mostraSalvataggio();
+};
+
+
 window.caricaUtentiAdmin = async function() {
   const snap = await db.collection('utenti').get();
   const utenti = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
@@ -573,9 +692,9 @@ auth.onAuthStateChanged(async function(user) {
     </div>
     <div style="padding:.6rem 1rem .4rem">
       <button onclick="salvaSessione()" style="width:100%;background:#1A5C38;color:#fff;border:none;border-radius:7px;padding:9px 0;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:inherit">
-        💾 Salva sessione
+        ☁️ Sync cloud
       </button>
-      <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px;line-height:1.4">Scarica HTML con tutti i dati</div>
+      <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px;line-height:1.4">Dati salvati automaticamente</div>
     </div>
   </div>
 </div>
@@ -5718,12 +5837,14 @@ function salvaFattura(){
   }
   closeM('modal-fatt');
   renderFatture();
+  window.salvaEAggiorna();
 }
 
 function delFattura(idx){
   if(!confirm('Eliminare questa fattura?')) return;
   fattureData.splice(idx,1);
   renderFatture();
+  window.salvaEAggiorna();
 }
 
 
@@ -5969,7 +6090,7 @@ function updPrev(soc,id,campo,val){
   if(document.getElementById('page-contratti').classList.contains('active')) buildContratti();
   if(document.getElementById('page-prev-riepilogo').classList.contains('active')) buildRiepilogoPrev();
 }
-function delVocePrev(soc,id){if(!confirm('Eliminare?'))return;prevState[soc]=prevState[soc].filter(v=>v.id!==id);buildPrev(soc);}
+function delVocePrev(soc,id){if(!confirm('Eliminare?'))return;prevState[soc]=prevState[soc].filter(v=>v.id!==id);buildPrev(soc);window.salvaEAggiorna();}
 function dupVocePrev(soc,id){
   const v=prevState[soc].find(v=>v.id===id);
   if(!v)return;
@@ -5977,6 +6098,7 @@ function dupVocePrev(soc,id){
   const idx=prevState[soc].indexOf(v);
   prevState[soc].splice(idx+1,0,copia);
   buildPrev(soc);
+  window.salvaEAggiorna();
 }
 
 let _sostaSoc='', _spostaId='';
@@ -6037,6 +6159,7 @@ function applicaSposta() {
   v.conto  = nuovoConto;
   closeM('modal-sposta');
   buildPrev(_sostaSoc);
+  window.salvaEAggiorna();
 }
 function togglePrevGruppo(gKey,soc){collapsedPrev[gKey]=!collapsedPrev[gKey];buildPrev(soc);}
 function filterPrev(soc,q){q=q.toLowerCase();document.querySelectorAll('#tbody-'+soc+' .prev-sub').forEach(tr=>{const s=tr.querySelector('.editable-sub')?.textContent.toLowerCase()||'';tr.style.display=(!q||s.includes(q))?'':'none';});}
@@ -6111,6 +6234,7 @@ function salvaVocePrev(){
   ['mp-conto','mp-sub','mp-note'].forEach(id=>document.getElementById(id).value='');
   ['mp-nmesi','mp-mensile'].forEach(id=>document.getElementById(id).value='');
   buildPrev(_prevSoc);
+  window.salvaEAggiorna();
 }
 
 // ══════════════════════════════════════════════════
@@ -6811,20 +6935,20 @@ function pdcFindC(gId,cId){const g=pdcFindG(gId);return g?g.conti.find(c=>c.id==
 function pdcFindS(gId,cId,sId){const c=pdcFindC(gId,cId);return c?c.sub.find(s=>s.id===sId):null;}
 
 // ── Toggle collapse ──
-function pdcToggleG(gId){const g=pdcFindG(gId);if(g)g.collapsed=!g.collapsed;pdcRender();}
-function pdcToggleC(gId,cId){const c=pdcFindC(gId,cId);if(c)c.collapsed=!c.collapsed;pdcRender();}
-function pdcExpandAll(){pdcData.forEach(g=>{g.collapsed=false;g.conti.forEach(c=>c.collapsed=false);});pdcRender();}
-function pdcCollapseAll(){pdcData.forEach(g=>{g.collapsed=true;g.conti.forEach(c=>c.collapsed=true);});pdcRender();}
+function pdcToggleG(gId){const g=pdcFindG(gId);if(g)g.collapsed=!g.collapsed;pdcRender();window.salvaEAggiorna();}
+function pdcToggleC(gId,cId){const c=pdcFindC(gId,cId);if(c)c.collapsed=!c.collapsed;pdcRender();window.salvaEAggiorna();}
+function pdcExpandAll(){pdcData.forEach(g=>{g.collapsed=false;g.conti.forEach(c=>c.collapsed=false);});pdcRender();window.salvaEAggiorna();}
+function pdcCollapseAll(){pdcData.forEach(g=>{g.collapsed=true;g.conti.forEach(c=>c.collapsed=true);});pdcRender();window.salvaEAggiorna();}
 
 // ── Ricerca ──
-function pdcFilter(q){pdcRender();}
+function pdcFilter(q){pdcRender();window.salvaEAggiorna();}
 
 // ── Edit inline etichette ──
 function pdcMakeInlineInput(span, currentVal, cls, onCommit){
   const inp=document.createElement('input');
   inp.type='text';inp.className='pdc-inline-inp '+(cls||'');inp.value=currentVal;
   span.replaceWith(inp);inp.focus();inp.select();
-  const commit=()=>{onCommit(inp.value.trim()||currentVal);pdcRender();};
+  const commit=()=>{onCommit(inp.value.trim()||currentVal);pdcRender();window.salvaEAggiorna();};
   inp.addEventListener('blur',commit);
   inp.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();inp.blur();}if(ev.key==='Escape'){inp.value=currentVal;inp.blur();}});
 }
@@ -6855,30 +6979,30 @@ function pdcMoveSub(gId,cId,sId,dir){
   const i=c.sub.findIndex(s=>s.id===sId);
   const ni=i+dir;if(ni<0||ni>=c.sub.length)return;
   [c.sub[i],c.sub[ni]]=[c.sub[ni],c.sub[i]];
-  pdcRender();
+  pdcRender();window.salvaEAggiorna();
 }
 
 // ── Elimina ──
 function pdcDelSub(gId,cId,sId){
   if(!confirm('Eliminare questo sottoconto?'))return;
   const c=pdcFindC(gId,cId);if(!c)return;
-  c.sub=c.sub.filter(s=>s.id!==sId);pdcRender();
+  c.sub=c.sub.filter(s=>s.id!==sId);pdcRender();window.salvaEAggiorna();
 }
 function pdcDelConto(gId,cId){
   if(!confirm('Eliminare il conto e tutti i suoi sottoconti?'))return;
   const g=pdcFindG(gId);if(!g)return;
-  g.conti=g.conti.filter(c=>c.id!==cId);pdcRender();
+  g.conti=g.conti.filter(c=>c.id!==cId);pdcRender();window.salvaEAggiorna();
 }
 function pdcDelGruppo(gId){
   if(!confirm('Eliminare il gruppo con tutti i conti e sottoconti?'))return;
-  pdcData=pdcData.filter(g=>g.id!==gId);pdcRender();
+  pdcData=pdcData.filter(g=>g.id!==gId);pdcRender();window.salvaEAggiorna();
 }
 
 // ── Aggiungi Gruppo ──
 function pdcAddGruppo(){
   const cod=String.fromCharCode(65+pdcData.length);
   pdcData.push({id:'G'+(++pdcNextId),cod,label:'NUOVO GRUPPO',collapsed:false,conti:[]});
-  pdcRender();
+  pdcRender();window.salvaEAggiorna();
 }
 
 // ── Aggiungi Conto ──
@@ -6897,7 +7021,7 @@ function pdcSaveConto(){
   const g=pdcFindG(_pdcTargetGruppoId);
   if(!g)return;
   g.conti.push({id:'C'+(++pdcNextId),cod,label:desc,collapsed:false,sub:[]});
-  closeM('modal-pdc-conto');pdcRender();
+  closeM('modal-pdc-conto');pdcRender();window.salvaEAggiorna();
 }
 
 // ── Aggiungi Sottoconto ──
@@ -6919,7 +7043,7 @@ function pdcSaveSub(){
   const c=pdcFindC(_pdcTargetGruppoId,_pdcTargetContoId);
   if(!c)return;
   c.sub.push({id:'S'+(++pdcNextId),cod,label:desc,tipo,note});
-  closeM('modal-pdc-sub');pdcRender();
+  closeM('modal-pdc-sub');pdcRender();window.salvaEAggiorna();
 }
 
 // ── Ripristina predefinito ──
@@ -6932,7 +7056,7 @@ function pdcReset(){
 const _origShowPage = showPage;
 showPage = function(id, el){
   _origShowPage(id, el);
-  if(id==='piano-conti') pdcRender();
+  if(id==='piano-conti') pdcRender();window.salvaEAggiorna();
 };
 
 // ══════════════════════════════════════════════════
@@ -7130,6 +7254,8 @@ function scadClick(soc, gruppo, conto, subconto, meseIdx) {
 // SALVA SESSIONE
 // ══════════════════════════════════════════════════
 function salvaSessione() {
+  window.salvaEAggiorna().then(() => alert('✅ Dati sincronizzati su cloud con successo!'));
+  return; // ── il codice sotto è mantenuto solo come backup ──
   const dati = { pnData, stipData, pregData, fattureData, contratti, prevState, pdcData, permessi, UTENTI };
   const json = JSON.stringify(dati);
   const script = '<scr'+'ipt id="__sessione_dati__">(function(){try{window.__sessioneDati__='+json+';}catch(e){}})();<\/scr'+'ipt>';
