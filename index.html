@@ -5016,10 +5016,10 @@ function buildScadenzario() {
                  v.conto.toLowerCase().includes(q) ||
                  v.gruppo.toLowerCase().includes(q))) return;
       const startIdx = MESI.indexOf(v.inizio);
+      const endIdx   = startIdx === -1 ? -1 : startIdx + (v.nmesi || 0) - 1; // ultimo mese incluso
       const mesiArr = Array(12).fill(null).map((_, i) => {
         if (startIdx === -1 || !v.nmesi) return null;
-        const offset = (i - startIdx + 12) % 12;
-        if (offset >= v.nmesi) return null;
+        if (i < startIdx || i > endIdx) return null; // fuori dal range → cella vuota
         const kv = `${soc}|${v.sub.trim().toLowerCase()}|${i}`;
         const pag = pagatiPerVoce[kv] || 0;
         return { prev: parseFloat(v.mensile)||0, pag, mi: i };
