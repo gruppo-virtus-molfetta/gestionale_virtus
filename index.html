@@ -2776,25 +2776,32 @@ auth.onAuthStateChanged(async function(user) {
 <!-- ─── ADMIN PERMESSI ─── -->
 <div id="page-admin-permessi" class="page">
   <div class="page-header">
-    <div class="page-title">🔐 Gestione Permessi Ruoli</div>
-    <div class="page-sub">Modifica le autorizzazioni per ciascun ruolo — le modifiche sono attive immediatamente e vengono salvate con 💾 Salva sessione</div>
+    <div class="page-title">🔐 Amministrazione</div>
+    <div class="page-sub">Gestisci gli utenti registrati e le autorizzazioni per ciascun ruolo</div>
   </div>
-  <div class="toolbar">
-    <button class="btn btn-dark" onclick="salvaPermessi()">💾 Salva permessi</button>
-    <button class="btn" onclick="ripristinaPermessi()">↩ Ripristina predefiniti</button>
-  </div>
-  <div class="tbl-wrap scrollx" style="margin-top:.8rem">
-    <table class="perm-table" id="perm-table">
-      <thead>
-        <tr>
-          <th style="width:45%;text-align:left">Funzione</th>
-          <th>Admin</th><th>Editor</th><th>Superior</th><th>Visitor</th>
-        </tr>
-      </thead>
-      <tbody id="perm-tbody"></tbody>
-    </table>
-  </div>
+
+  <!-- UTENTI — in cima perché urgente -->
   <div id="gestione-utenti-section"></div>
+
+  <!-- PERMESSI — configurazione stabile -->
+  <div style="margin-top:1.5rem;border-top:.5px solid var(--border);padding-top:1.2rem">
+    <div style="font-size:13px;font-weight:700;color:var(--text1);margin-bottom:.8rem">🔐 Permessi per ruolo</div>
+    <div class="toolbar" style="margin-bottom:.8rem">
+      <button class="btn btn-dark" onclick="salvaPermessi()">💾 Salva permessi</button>
+      <button class="btn" onclick="ripristinaPermessi()">↩ Ripristina predefiniti</button>
+    </div>
+    <div class="tbl-wrap scrollx">
+      <table class="perm-table" id="perm-table">
+        <thead>
+          <tr>
+            <th style="width:45%;text-align:left">Funzione</th>
+            <th>Admin</th><th>Editor</th><th>Superior</th><th>Visitor</th>
+          </tr>
+        </thead>
+        <tbody id="perm-tbody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 </div><!-- /content -->
