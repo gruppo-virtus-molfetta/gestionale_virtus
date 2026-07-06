@@ -399,15 +399,37 @@ window.doRegistra = async function() {
   if (pass.length < 6) { err.textContent = 'Password minimo 6 caratteri.'; return; }
   try {
     const cred = await auth.createUserWithEmailAndPassword(email, pass);
-    await db.collection('utenti').doc(cred.user.uid).set({
-      nome, email, ruolo: 'visitor', stato: 'in_attesa',
-      creatoIl: new Date().toISOString()
-    });
-    document.getElementById('reg-ok').style.display = 'block';
-    document.getElementById('reg-form').style.display = 'none';
+    // Tenta scrittura profilo su Firestore — con retry in caso di errore
+    let firestoreOk = false;
+    for (let tentativo = 0; tentativo < 3; tentativo++) {
+      try {
+        await db.collection('utenti').doc(cred.user.uid).set({
+          nome, email, ruolo: 'visitor', stato: 'in_attesa',
+          creatoIl: new Date().toISOString()
+        });
+        firestoreOk = true;
+        break;
+      } catch(fe) {
+        if (tentativo < 2) await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    if (!firestoreOk) {
+      // Auth creato ma Firestore fallito — segnala il problema ma non bloccare
+      err.textContent = 'Account creato ma errore nel salvataggio profilo. Contatta l\'amministratore con la tua email.';
+      err.style.color = '#7B3F00';
+    } else {
+      document.getElementById('reg-ok').style.display = 'block';
+      document.getElementById('reg-form').style.display = 'none';
+    }
   } catch(e) {
-    err.textContent = e.code === 'auth/email-already-in-use'
-      ? 'Email già registrata.' : 'Errore: ' + e.message;
+    if (e.code === 'auth/email-already-in-use') {
+      err.innerHTML = 'Email già registrata. <b>Prova ad accedere</b> con la scheda "Accedi", '
+        + 'oppure contatta l\'amministratore se non ricordi la password.';
+      // Porta l'utente alla scheda accedi dopo 3 secondi
+      setTimeout(() => switchTab('accedi'), 3000);
+    } else {
+      err.textContent = 'Errore: ' + e.message;
+    }
   }
 };
 
@@ -423,9 +445,26 @@ window.doLogout = async function() {
 // ════════════════════════════════════════════════
 // GESTIONE UTENTI (admin)
 // ════════════════════════════════════════════════
+window.aggiornaBadgeAttesa = async function() {
+  if (window.currentRuolo !== 'admin') return;
+  try {
+    const snap = await db.collection('utenti').get();
+    const inAttesa = snap.docs.filter(d => d.data().stato === 'in_attesa').length;
+    const badge = document.getElementById('badge-attesa');
+    if (!badge) return;
+    if (inAttesa > 0) {
+      badge.textContent = inAttesa;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e) { /* silenzioso */ }
+};
+
 window.approvaUtente = async function(uid, ruolo) {
   await db.collection('utenti').doc(uid).set({ ruolo, stato: 'approvato' }, { merge: true });
   window.caricaUtentiAdmin();
+  window.aggiornaBadgeAttesa();
 };
 window.eliminaUtenteFirebase = async function(uid) {
   if (!confirm('Eliminare questo utente?')) return;
@@ -598,7 +637,25 @@ auth.onAuthStateChanged(async function(user) {
     try {
       const snap = await db.collection('utenti').doc(user.uid).get();
       if (!snap.exists) {
-        document.getElementById('login-err').textContent = 'Profilo non trovato. Contatta l\'amministratore.';
+        // Profilo mancante — può succedere se la scrittura Firestore è fallita durante la registrazione.
+        // Ricrea il profilo con stato in_attesa invece di bloccare l'utente.
+        try {
+          await db.collection('utenti').doc(user.uid).set({
+            nome: user.displayName || user.email.split('@')[0],
+            email: user.email,
+            ruolo: 'visitor',
+            stato: 'in_attesa',
+            creatoIl: new Date().toISOString(),
+            notaAdmin: 'Profilo ricreato automaticamente — verifica identità'
+          });
+        } catch(fe) {
+          document.getElementById('login-err').textContent = 'Errore di connessione. Riprova tra qualche secondo.';
+          await auth.signOut(); return;
+        }
+        // Mostra schermata attesa come se si fosse appena registrato
+        document.getElementById('login-overlay').style.display = 'flex';
+        document.getElementById('login-form-box').style.display = 'none';
+        document.getElementById('login-attesa-box').style.display = 'block';
         await auth.signOut(); return;
       }
       const profilo = snap.data();
@@ -640,6 +697,9 @@ auth.onAuthStateChanged(async function(user) {
       pdcRender();
       window.buildHome();
       window.showPage('home', document.getElementById('nav-home'));
+      // Controlla utenti in attesa ogni 2 minuti
+      window.aggiornaBadgeAttesa();
+      setInterval(window.aggiornaBadgeAttesa, 120000);
     } catch(e) {
       document.getElementById('login-err').textContent = 'Errore connessione: ' + e.message;
     }
@@ -695,7 +755,7 @@ auth.onAuthStateChanged(async function(user) {
 
     <div class="nav-section">Impostazioni</div>
     <button class="nav-item" onclick="showPage('piano-conti',this)"><span class="icon">🗃</span>Piano dei Conti</button>
-    <button class="nav-item perm-ctrl" id="nav-admin-permessi" onclick="showPage('admin-permessi',this)"><span class="icon">🔐</span>Permessi ruoli</button>
+    <button class="nav-item perm-ctrl" id="nav-admin-permessi" onclick="showPage('admin-permessi',this)"><span class="icon">🔐</span>Permessi ruoli<span id="badge-attesa" style="display:none;margin-left:auto;background:#E53935;color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;min-width:16px;text-align:center"></span></button>
     <div id="user-bar" style="padding:.5rem 1rem .4rem;border-top:.5px solid var(--border);margin-top:.5rem;font-size:11px;color:var(--text2)">
       <div style="font-weight:700;color:var(--text1)" id="user-bar-name"></div>
       <div id="ruolo-badge"></div>
