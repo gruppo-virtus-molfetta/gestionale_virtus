@@ -598,33 +598,46 @@ window.salvaEAggiorna = async function() {
 
 
 window.caricaUtentiAdmin = async function() {
-  const snap = await db.collection('utenti').get();
-  const utenti = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
-  const tb = document.getElementById('utenti-firebase-tbody');
-  if (!tb) return;
-  const ruoli = ['admin','editor','superior','visitor'];
-  tb.innerHTML = utenti.map(u => `
-    <tr style="border-bottom:.5px solid var(--border)">
-      <td style="padding:7px 10px"><b>${u.nome||''}</b><br><span style="font-size:10px;color:var(--text2)">${u.email||''}</span></td>
-      <td style="padding:7px 10px;text-align:center">
-        <span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;
-          background:${u.stato==='approvato'?'#C6EFCE':'#FFF2CC'};
-          color:${u.stato==='approvato'?'#1A5C38':'#7B3F00'}">
-          ${u.stato==='approvato'?'Approvato':'In attesa'}
-        </span>
-      </td>
-      <td style="padding:7px 10px;text-align:center">
-        <select class="form-input" style="font-size:11px;padding:3px 6px" onchange="cambiaRuolo('${u.uid}',this.value)">
-          ${ruoli.map(r=>`<option ${u.ruolo===r?'selected':''}>${r}</option>`).join('')}
-        </select>
-      </td>
-      <td style="padding:7px 10px;text-align:center;white-space:nowrap">
-        ${u.stato!=='approvato'
-          ? `<button class="btn btn-dark" style="font-size:10px;padding:3px 10px;margin-right:4px"
-              onclick="approvaUtente('${u.uid}','${u.ruolo||'visitor'}')">✅ Approva</button>` : ''}
-        <button class="btn-del" onclick="eliminaUtenteFirebase('${u.uid}')">✕</button>
-      </td>
-    </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text2)">Nessun utente</td></tr>';
+  const loading = document.getElementById('utenti-loading');
+  const table   = document.getElementById('utenti-table');
+  if (loading) { loading.style.display = 'block'; loading.textContent = 'Caricamento utenti...'; }
+  if (table)   table.style.display = 'none';
+  try {
+    const snap = await db.collection('utenti').get();
+    const utenti = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+    const tb = document.getElementById('utenti-firebase-tbody');
+    if (!tb) return;
+    const ruoli = ['admin','editor','superior','visitor'];
+    tb.innerHTML = utenti.map(u => `
+      <tr style="border-bottom:.5px solid var(--border)">
+        <td style="padding:7px 10px"><b>${u.nome||''}</b><br><span style="font-size:10px;color:var(--text2)">${u.email||''}</span>
+          ${u.notaAdmin ? `<br><span style="font-size:9px;color:#7B3F00;font-style:italic">⚠ ${u.notaAdmin}</span>` : ''}
+        </td>
+        <td style="padding:7px 10px;text-align:center">
+          <span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;
+            background:${u.stato==='approvato'?'#C6EFCE':'#FFF2CC'};
+            color:${u.stato==='approvato'?'#1A5C38':'#7B3F00'}">
+            ${u.stato==='approvato'?'Approvato':'In attesa'}
+          </span>
+        </td>
+        <td style="padding:7px 10px;text-align:center">
+          <select class="form-input" style="font-size:11px;padding:3px 6px" onchange="cambiaRuolo('${u.uid}',this.value)">
+            ${ruoli.map(r=>`<option ${u.ruolo===r?'selected':''}>${r}</option>`).join('')}
+          </select>
+        </td>
+        <td style="padding:7px 10px;text-align:center;white-space:nowrap">
+          ${u.stato!=='approvato'
+            ? `<button class="btn btn-dark" style="font-size:10px;padding:3px 10px;margin-right:4px"
+                onclick="approvaUtente('${u.uid}','${u.ruolo||'visitor'}')">✅ Approva</button>` : ''}
+          <button class="btn-del" onclick="eliminaUtenteFirebase('${u.uid}')">✕</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text2)">Nessun utente registrato</td></tr>';
+    if (loading) loading.style.display = 'none';
+    if (table)   table.style.display = '';
+    window.aggiornaBadgeAttesa();
+  } catch(e) {
+    if (loading) { loading.textContent = 'Errore nel caricamento: ' + e.message; }
+  }
 };
 
 // ════════════════════════════════════════════════
@@ -3240,6 +3253,30 @@ function applicaPermessi() {
   document.querySelectorAll('.pdc-edit-ctrl').forEach(b => b.style.display = P['pdc-edit'] ? '' : 'none');
 }
 
+function buildGestioneUtenti() {
+  let el = document.getElementById('gestione-utenti-section');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="margin-top:1.5rem;border-top:.5px solid var(--border);padding-top:1.2rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem">
+        <div style="font-size:13px;font-weight:700;color:var(--text1)">👤 Utenti Registrati</div>
+        <button class="btn" onclick="window.caricaUtentiAdmin()" style="font-size:11px;padding:4px 12px">🔄 Aggiorna</button>
+      </div>
+      <div id="utenti-loading" style="font-size:12px;color:var(--text2);padding:.5rem 0">Caricamento utenti...</div>
+      <table id="utenti-table" style="width:100%;border-collapse:collapse;font-size:12px;display:none">
+        <thead><tr style="background:#1F3864;color:#fff">
+          <th style="padding:8px 10px;text-align:left">Utente</th>
+          <th style="padding:8px 10px;text-align:center">Stato</th>
+          <th style="padding:8px 10px;text-align:center">Ruolo</th>
+          <th style="padding:8px 10px;text-align:center">Azioni</th>
+        </tr></thead>
+        <tbody id="utenti-firebase-tbody">
+          <tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text2)">Nessun utente</td></tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function buildAdminPermessi() {
   const tbody = document.getElementById('perm-tbody');
   if (!tbody) return;
@@ -3287,7 +3324,7 @@ function showPage(id, el) {
   if(el) el.classList.add('active');
   closeSidebar(); // chiude sidebar su mobile
   if(id==='home')        buildHome();
-  if(id==='admin-permessi'){ buildAdminPermessi(); if(currentRuolo==='admin') buildGestioneUtenti(); }
+  if(id==='admin-permessi'){ buildAdminPermessi(); if(currentRuolo==='admin') { buildGestioneUtenti(); window.caricaUtentiAdmin(); } }
   if(id==='fabbisogno')  buildFabbisogno();
   if(id==='stipendi')    renderStipendi();
   if(id==='pregresso')   renderPregresso();
