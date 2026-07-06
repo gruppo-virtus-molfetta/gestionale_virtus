@@ -1685,15 +1685,19 @@ function insCalcola() {
 
 function openModalInsoluta(id) {
   const m = id ? insoluteData.find(x => x.id === id) : null;
-  document.getElementById('ins-soc').value        = m ? m.soc : 'VIRTUS';
-  document.getElementById('ins-cliente').value    = m ? m.cliente : '';
-  document.getElementById('ins-totale').value     = m ? m.totaleIVA : '';
-  document.getElementById('ins-iva-pct').value    = m ? m.ivaPct : '22';
-  document.getElementById('ins-contrib-pct').value= m ? m.contribPct : '';
-  document.getElementById('ins-note').value       = m ? m.note : '';
+  document.getElementById('ins-soc').value         = m ? m.soc : 'VIRTUS';
+  document.getElementById('ins-cliente').value     = m ? m.cliente : '';
+  document.getElementById('ins-totale').value      = m ? m.totaleIVA : '';
+  document.getElementById('ins-iva-pct').value     = m ? m.ivaPct : '22';
+  document.getElementById('ins-contrib-pct').value = m ? m.contribPct : '';
+  document.getElementById('ins-note').value        = m ? m.note : '';
   document.getElementById('modal-insoluta').dataset.editId = id || '';
   insCalcola();
   document.getElementById('modal-insoluta').style.display = 'flex';
+}
+
+function chiudiModalInsoluta() {
+  document.getElementById('modal-insoluta').style.display = 'none';
 }
 
 function salvaInsoluta() {
@@ -1734,7 +1738,7 @@ function salvaInsoluta() {
     insoluteData.push(rec);
   }
 
-  closeM('modal-insoluta');
+  chiudiModalInsoluta();
   buildInsolute();
   window.salvaEAggiorna();
 }
@@ -3630,7 +3634,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 </div>
 
 <!-- Modal Fattura Insoluta -->
-<div class="modal-overlay" id="modal-insoluta" onclick="if(event.target===this)closeM('modal-insoluta')">
+<div class="modal-overlay" id="modal-insoluta" onclick="if(event.target===this)chiudiModalInsoluta()">
   <div class="modal" style="width:500px">
     <div class="modal-title">Fattura Insoluta 2025/2026</div>
     <div class="two-col">
@@ -3676,7 +3680,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <input type="text" class="form-input" id="ins-note" placeholder="es. riferimento contratto..." style="width:100%">
     </div>
     <div class="modal-actions">
-      <button class="btn" onclick="closeM('modal-insoluta')">Annulla</button>
+      <button class="btn" onclick="chiudiModalInsoluta()">Annulla</button>
       <button class="btn btn-dark" onclick="salvaInsoluta()">Salva</button>
     </div>
   </div>
