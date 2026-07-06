@@ -3334,7 +3334,7 @@ function showPage(id, el) {
   if(id==='home')        buildHome();
   if(id==='admin-permessi'){
     buildAdminPermessi();
-    if(currentRuolo==='admin') {
+    if(window.currentRuolo==='admin') {
       buildGestioneUtenti();
       // Piccolo delay per assicurarsi che il DOM sia aggiornato prima di caricare gli utenti
       setTimeout(() => { if(window.caricaUtentiAdmin) window.caricaUtentiAdmin(); }, 100);
