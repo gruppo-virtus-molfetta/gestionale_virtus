@@ -3325,7 +3325,14 @@ function showPage(id, el) {
   if(el) el.classList.add('active');
   closeSidebar(); // chiude sidebar su mobile
   if(id==='home')        buildHome();
-  if(id==='admin-permessi'){ buildAdminPermessi(); if(currentRuolo==='admin') { buildGestioneUtenti(); window.caricaUtentiAdmin(); } }
+  if(id==='admin-permessi'){
+    buildAdminPermessi();
+    if(currentRuolo==='admin') {
+      buildGestioneUtenti();
+      // Piccolo delay per assicurarsi che il DOM sia aggiornato prima di caricare gli utenti
+      setTimeout(() => { if(window.caricaUtentiAdmin) window.caricaUtentiAdmin(); }, 100);
+    }
+  }
   if(id==='fabbisogno')  buildFabbisogno();
   if(id==='stipendi')    renderStipendi();
   if(id==='pregresso')   renderPregresso();
